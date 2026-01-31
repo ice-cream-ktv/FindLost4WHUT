@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.whut.lostandfoundforwhut.mapper.ItemImageMapper">
+    <resultMap id="ItemImageResultMap" type="com.whut.lostandfoundforwhut.model.entity.ItemImage">
+        <result column="item_id" property="itemId"/>
+        <result column="image_id" property="imageId"/>
+    </resultMap>
+</mapper>

@@ -1,0 +1,229 @@
+# 项目说明
+
+## 1. 配置文件
+- `src/main/resources/application.yml`：公共配置（应用名、JWT、MyBatis‑Plus、日志、启用环境）
+- `src/main/resources/application-dev.yml`：开发环境（数据库、Redis、连接池）
+- `src/main/resources/application-prod.yml`：生产环境（数据库、Redis、连接池）
+
+当前默认启用：`dev`（在 `application.yml` 中配置 `spring.profiles.active=dev`）。
+
+---
+
+## 2. 枚举定义（common/enums）
+- `common/enums/ResponseCode`：统一响应码
+  - 字段：`code`（错误码）、`info`（错误信息）
+- `common/enums/item/ItemType`：物品类型
+  - `LOST(0, "挂失")`
+  - `FOUND(1, "招领")`
+- `common/enums/item/ItemStatus`：物品状态
+  - `ACTIVE(0, "有效")`
+  - `CLOSED(1, "结束")`
+- `common/enums/user/UserStatus`：用户状态
+  - `NORMAL(0, "正常")`
+  - `BANNED(1, "封禁")`
+  - `DEACTIVATED(2, "注销")`
+
+---
+
+## 3. 常量与异常
+- `common/constant/Constants`：通用常量、Redis Key 规则
+  - 例如：`Constants.RedisKey.ITEM_DETAIL`
+- `common/exception/AppException`：业务异常
+  - 构造参数：`code`（异常码）、`message`（异常信息）、`cause`（异常原因）
+  - 用途：在业务层抛出，交由全局异常处理统一返回
+- `common/exception/GlobalExceptionHandler`：全局异常处理
+  - `handleAppException(AppException e)`：处理业务异常
+  - `handleValidation(Exception e)`：处理参数校验异常
+  - `handleException(Exception e)`：处理未捕获异常
+- `common/result/Result`：统一返回体
+  - 字段：`code`、`info`、`data`
+  - 方法：
+    - `success(T data)`：成功返回，参数 `data` 为业务数据
+    - `fail(ResponseCode code)`：失败返回，参数为枚举错误码
+    - `fail(String code, String info)`：失败返回，自定义错误码与信息
+
+---
+
+## 4. 工具类（common/utils）
+
+### 4.1 加密（BCrypt）
+- 位置：`common/utils/security/encrypt/BCryptUtils`
+- 方法：
+  - `hash(String rawPassword)`
+    - 参数：`rawPassword` 明文密码
+    - 功能：生成不可逆哈希
+    - 返回：哈希后的密码
+  - `matches(String rawPassword, String hashedPassword)`
+    - 参数：明文 + 哈希
+    - 功能：校验是否匹配
+    - 返回：`true/false`
+
+### 4.2 JWT
+- 位置：`common/utils/security/jwt/JwtUtil`
+- 方法：
+  - `generateToken(String email)`
+    - 参数：`email` 用户邮箱
+    - 功能：生成 JWT（subject 使用邮箱）
+    - 返回：Token 字符串
+  - `getEmail(String token)`
+    - 参数：`token` JWT
+    - 功能：解析邮箱
+    - 返回：邮箱
+  - `isTokenValid(String token)`
+    - 参数：`token` JWT
+    - 功能：校验 Token 有效性
+    - 返回：`true/false`
+  - `getExpirationMs()`
+    - 功能：获取过期时间（毫秒）
+    - 返回：过期时间
+
+示例（登录签发 + 鉴权校验 + 失效处理）：
+```java
+// 1) 登录成功后签发 Token（用邮箱作为 subject）
+String email = "test@whut.edu.cn";
+String token = jwtUtil.generateToken(email);
+
+// 2) 前端携带 Token 访问接口（示意）
+// Authorization: Bearer <token>
+
+// 3) 服务端校验 Token
+if (!jwtUtil.isTokenValid(token)) {
+    // 失效/过期，提示前端重新登录
+    return Result.fail("401", "Token 已失效，请重新登录");
+}
+
+// 4) 解析邮箱并做权限判断
+String loginEmail = jwtUtil.getEmail(token);
+// 例如：根据邮箱查用户，再判断是否被封禁
+// if (user.getStatus() == UserStatus.BANNED.getCode()) return Result.fail(...)
+```
+
+### 4.3 本地锁（防缓存击穿）
+- 位置：`common/utils/lock/LocalKeyLock`
+- 方法：
+  - `getLock(String key)`
+    - 参数：`key` 业务键
+    - 功能：获取/创建本地锁
+    - 返回：`ReentrantLock`
+  - `unlock(String key, ReentrantLock lock)`
+    - 参数：`key`、`lock`
+    - 功能：释放锁并清理缓存
+  - `withLock(String key, Supplier<T> supplier)`
+    - 参数：`key`、`supplier` 执行逻辑
+    - 功能：自动加锁/解锁，返回执行结果
+
+示例（缓存击穿场景）：
+```java
+String cacheKey = "item:detail:" + itemId;
+Object cached = redisService.getValue(cacheKey);
+if (cached != null) {
+    return Result.success(cached);
+}
+
+// 缓存未命中时，用本地锁保护“回源到 DB”的逻辑
+Object data = localKeyLock.withLock(cacheKey, () -> {
+    Object secondCheck = redisService.getValue(cacheKey);
+    if (secondCheck != null) {
+        return secondCheck;
+    }
+    // 回源查询数据库
+    Object dbData = itemMapper.selectById(itemId);
+    redisService.setValue(cacheKey, dbData);
+    return dbData;
+});
+return Result.success(data);
+```
+
+### 4.4 分页工具
+- 位置：`common/utils/page/PageUtils`
+- 方法：
+  - `toPageResult(IPage<T> page)`
+    - 参数：MyBatis‑Plus `IPage<T>`
+    - 功能：转换为统一分页 VO
+    - 返回：`PageResultVO<T>`
+
+示例（返回分页列表）：
+```java
+public Result<PageResultVO<Item>> list(PageQueryDTO query) {
+    Page<Item> page = new Page<>(query.getPageNo(), query.getPageSize());
+    IPage<Item> result = itemMapper.selectPage(page, null);
+    return Result.success(PageUtils.toPageResult(result));
+}
+```
+
+---
+
+## 5. Redis 扩展能力（common/utils/bloom）
+- 布隆过滤器：`common/utils/bloom/RedisBloomFilter`
+  - `add(String value)`：写入位图
+  - `mightContain(String value)`：判断可能存在
+- 工厂：`common/utils/bloom/factory/BloomFilterFactory`
+  - `getBloomFilter(String key, long expectedInsertions, double fpp)`：按 key 复用实例
+
+示例（防止缓存穿透）：
+```java
+// 1) 系统启动或数据初始化时，提前灌入已有 itemId
+RedisBloomFilter bloom = bloomFilterFactory.getBloomFilter(
+        Constants.RedisKey.ITEM_BLOOM, 100000, 0.01);
+bloom.add("1001");
+bloom.add("1002");
+
+// 2) 查询时先用布隆过滤器判断
+String itemId = "9999";
+if (!bloom.mightContain(itemId)) {
+    // 肯定不存在，直接返回，避免打到数据库
+    return Result.fail("404", "物品不存在");
+}
+// 可能存在，再查缓存/数据库
+```
+
+---
+
+## 6. DTO / VO / Entity
+- DTO：`model/dto`（如 `PageQueryDTO`）
+  - `pageNo`：当前页（从 1 开始）
+  - `pageSize`：每页大小
+- VO：`model/vo`（如 `PageResultVO`）
+  - `pageNo`、`pageSize`、`total`、`records`
+- Entity：`model/entity`（对应数据库表结构）
+
+---
+
+## 7. 配置类（config）
+- `CorsConfig`：全局跨域配置
+- `SecurityConfig`：Spring Security + JWT 开关
+- `RedisConfig`：RedisTemplate 序列化配置
+- `MpConfig`：MyBatis‑Plus 分页拦截器
+- `MyMetaObjectHandler`：自动填充 createdAt/updatedAt
+- `OpenApiConfig`：OpenAPI/Knife4j 基础配置
+
+---
+
+## 8. Redis 服务封装
+- 接口：`service/IRedisService`
+- 实现：`service/impl/RedisService`
+- 主要能力：KV、Hash、List、Set、计数器
+- 示例方法：
+  - `setValue(String key, Object value)`：写入 KV
+  - `getValue(String key)`：读取 KV
+  - `putToMap(String key, String field, Object value)`：写入 Hash
+  - `addToList(String key, Object value)`：列表入队
+  - `addToSet(String key, Object... values)`：集合添加
+  - `increment(String key)`：自增计数
+
+---
+
+## 9. Mapper 与 XML
+- Mapper 接口：`mapper/*Mapper.java`
+- XML 位置：`src/main/resources/mapper/com/whut/lostandfoundforwhut/mapper/*.xml`
+
+已配置：
+```
+mybatis-plus.mapper-locations=classpath*:mapper/**/*.xml
+```
+
+---
+
+## 10. Swagger / Knife4j
+- OpenAPI JSON：`/v3/api-docs`
+- Knife4j UI：`/doc.html`
