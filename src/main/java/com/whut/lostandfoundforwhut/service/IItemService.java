@@ -5,6 +5,8 @@ import com.whut.lostandfoundforwhut.model.dto.ItemFilter;
 import com.whut.lostandfoundforwhut.model.entity.Item;
 import com.whut.lostandfoundforwhut.model.vo.PageResultVO;
 
+import java.util.List;
+
 /**
  * @author Qoder
  * @date 2026/01/31
@@ -56,10 +58,12 @@ public interface IItemService {
     boolean takeDownItem(Long itemId, Long userId);
 
     /**
-     * 文本向量化
-     *
-     * @param text 输入文本
-     * @return 向量字符串
+     * 通过向量搜索查找相似物品
+     * 
+     * @param query        查询文本
+     * @param maxResults   最大返回结果数
+     * @param statusFilter 状态筛选条件
+     * @return 相似物品列表
      */
-    String text2vec(String text);
+    List<Item> searchSimilarItems(String query, int maxResults, Integer statusFilter);
 }
