@@ -18,6 +18,20 @@ docker-compose会自根据docs\dev-ops\environment\mysql\sql\lost_and_found_init
 
 当前默认启用：`dev`（在 `application.yml` 中配置 `spring.profiles.active=dev`）。
 
+### 邮件配置（注册验证码）
+- 配置位置：`application-dev.yml` / `application-prod.yml`
+- 关键字段：
+  - `spring.mail.host`
+  - `spring.mail.port`
+  - `spring.mail.username`
+  - `spring.mail.password`
+  - `app.mail.from`
+  - `app.mail.test-to`（可选，用于本地邮件发送测试）
+  - `app.jwt.refresh-expiration-ms`（refresh token 有效期）
+- 邮件模板：
+  - 标题：`注册验证码`
+  - 内容：`您的注册验证码为：{code}，有效期 90 秒。如非本人操作请忽略。`
+
 
 ---
 
@@ -109,6 +123,96 @@ String loginEmail = jwtUtil.getEmail(token);
 // 例如：根据邮箱查用户，再判断是否被封禁
 // if (user.getStatus() == UserStatus.BANNED.getCode()) return Result.fail(...)
 ```
+
+## 4.4 认证与注册接口（Swagger/REST）
+
+### 发送注册验证码
+`POST /api/auth/register/code`
+- 入参：
+  - `email`
+- 说明：
+  - 验证码 4 位
+  - 有效期 90 秒
+  - 同一邮箱 60 秒内仅允许发送一次
+- 可能返回错误码：
+  - `USR_003`：邮箱已存在
+  - `USR_006`：验证码发送过于频繁
+  - `MAIL_001`：邮箱配置缺失或无效
+  - `MAIL_002`：邮件发送失败
+
+### 注册
+`POST /api/auth/register`（等价于 `POST /api/users`）
+- 入参：
+  - `email`
+  - `password`
+  - `confirmPassword`
+  - `code`（邮箱验证码）
+  - `nickname`（可选）
+- 说明：
+  - 注册成功不自动登录、不返回 token
+- 可能返回错误码：
+  - `USR_003`：邮箱已存在
+  - `USR_004`：邮箱验证码无效
+  - `USR_005`：邮箱验证码已过期
+
+### 登录
+`POST /api/auth/login`
+- 入参：
+  - `email`
+  - `password`
+- 返回：
+  - `token`
+  - `expiresIn`（毫秒，来源于配置 `app.jwt.expiration-ms`）
+  - `refreshToken`
+  - `refreshExpiresIn`（毫秒，来源于配置 `app.jwt.refresh-expiration-ms`）
+- 说明：
+  - JWT 的过期时间写入 token 的 `exp` 字段
+- 可能返回错误码：
+  - `USR_001`：用户不存在
+  - `USR_007`：邮箱或密码错误
+  - `USR_008`：登录失败次数过多，请5分钟后再试
+
+## 5. 当前用户接口（推荐）
+前端只需要保存 token/refreshToken，无需传 userId。
+
+- `GET /api/users/me` 获取当前用户信息  
+- `PUT /api/users/me/password` 修改当前用户密码  
+- `PUT /api/users/me/nickname` 修改当前用户昵称  
+- `DELETE /api/users/me` 注销当前用户
+
+### 刷新
+`POST /api/auth/refresh`
+- 入参：
+  - `refreshToken`
+- 返回：
+  - `token`
+  - `expiresIn`
+  - `refreshToken`（已旋转）
+  - `refreshExpiresIn`
+- 可能返回错误码：
+  - `USR_009`：Refresh token 无效
+
+### 退出
+`POST /api/auth/logout`
+- 入参：
+  - `refreshToken`
+- 说明：
+  - 删除 refresh token，使其无法继续刷新
+- 可能返回错误码：
+  - `USR_009`：Refresh token 无效
+
+#### 刷新策略说明（前端）
+**主动刷新（推荐）**
+- 登录后记录过期时间点：`expireAt = now + expiresIn`
+- 提前刷新（例如提前 5 分钟）：`refreshAt = expireAt - 5 * 60 * 1000`
+- 到点调用 `/api/auth/refresh` 获取新 token
+
+**被动刷新（兜底）**
+- 业务请求返回“未登录/过期”时触发刷新
+- 前端调用 `/api/auth/refresh`，成功后重试原请求
+
+**实践建议**
+- 主动刷新 + 被动刷新结合，体验更平滑
 
 ### 4.3 本地锁（防缓存击穿）
 - 位置：`common/utils/lock/LocalKeyLock`

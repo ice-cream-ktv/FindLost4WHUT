@@ -8,6 +8,7 @@ app:
   jwt:
     secret: ChangeThisToA32CharOrLongerSecretKey!
     expiration-ms: 86400000
+    refresh-expiration-ms: 604800000
     issuer: lostAndFoundForWhut
   security:
     default-username: admin

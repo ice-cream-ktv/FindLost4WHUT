@@ -13,7 +13,7 @@ import com.whut.lostandfoundforwhut.model.dto.PageQueryDTO;
 public interface IItemService {
     /**
      * 添加物品
-     * 
+     *
      * @param itemDTO 物品DTO
      * @param userId  用户ID
      * @return 物品实体
@@ -22,7 +22,7 @@ public interface IItemService {
 
     /**
      * 更新物品
-     * 
+     *
      * @param itemId  物品ID
      * @param itemDTO 物品DTO
      * @param userId  用户ID
@@ -32,7 +32,7 @@ public interface IItemService {
 
     /**
      * 获取物品详情
-     * 
+     *
      * @param itemId 物品ID
      * @return 物品实体
      */
@@ -40,7 +40,7 @@ public interface IItemService {
 
     /**
      * 筛选物品
-     * 
+     *
      * @param pageQueryDTO 分页查询参数
      * @param type         物品类型（可选）
      * @param status       物品状态（可选）
@@ -51,7 +51,7 @@ public interface IItemService {
 
     /**
      * 下架物品
-     * 
+     *
      * @param itemId 物品ID
      * @param userId 用户ID
      * @return 是否下架成功

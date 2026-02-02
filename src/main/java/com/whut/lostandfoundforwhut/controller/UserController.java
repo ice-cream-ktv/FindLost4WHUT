@@ -3,13 +3,13 @@ package com.whut.lostandfoundforwhut.controller;
 import com.whut.lostandfoundforwhut.common.enums.ResponseCode;
 import com.whut.lostandfoundforwhut.common.exception.AppException;
 import com.whut.lostandfoundforwhut.common.result.Result;
-import com.whut.lostandfoundforwhut.common.utils.security.jwt.JwtUtil;
-import com.whut.lostandfoundforwhut.model.dto.UserCreateDTO;
+import com.whut.lostandfoundforwhut.model.dto.UserRegisterDTO;
 import com.whut.lostandfoundforwhut.model.dto.UserNicknameUpdateDTO;
 import com.whut.lostandfoundforwhut.model.dto.UserPasswordUpdateDTO;
 import com.whut.lostandfoundforwhut.model.dto.UserUpdateDTO;
 import com.whut.lostandfoundforwhut.model.entity.User;
 import com.whut.lostandfoundforwhut.model.vo.UserVO;
+import com.whut.lostandfoundforwhut.service.IAuthService;
 import com.whut.lostandfoundforwhut.service.IUserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -18,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -32,7 +33,7 @@ import org.springframework.web.bind.annotation.*;
 public class UserController {
 
     private final IUserService userService;
-    private final JwtUtil jwtUtil;
+    private final IAuthService authService;
 
     // 新增：获取当前登录用户的邮箱（从Security上下文，替代原requireEmail方法）
     private String getCurrentUserEmail() {
@@ -43,6 +44,20 @@ public class UserController {
         return userDetails.getUsername(); // 注意：这里的username实际是用户邮箱（和过滤器逻辑一致）
     }
 
+    private String requireCurrentUserEmail() {
+        String email = getCurrentUserEmail();
+        if (!StringUtils.hasText(email)) {
+            throw new AppException(ResponseCode.NOT_LOGIN.getCode(), ResponseCode.NOT_LOGIN.getInfo());
+        }
+        return email;
+    }
+
+    private Long getCurrentUserId() {
+        String email = requireCurrentUserEmail();
+        return userService.getUserIdByEmail(email);
+    }
+
+
     // 新增：校验用户归属权（提取为公共方法，避免重复）
     private void checkUserOwnership(Long userId, String currentUserEmail) {
         User target = userService.getUserById(userId);
@@ -52,12 +67,43 @@ public class UserController {
     }
 
     @PostMapping
-    @Operation(summary = "Create user", description = "Create user and return token")
-    public Result<UserVO> createUser(@RequestBody UserCreateDTO dto) {
+    @Operation(summary = "Register user", description = "Register user with email verification code")
+    public Result<UserVO> createUser(@RequestBody UserRegisterDTO dto) {
         // 保留原有逻辑（注册接口无需认证）
-        User user = userService.createUser(dto);
-        String token = jwtUtil.generateToken(user.getEmail());
-        return Result.success(UserVO.from(user, token));
+        User user = authService.register(dto);
+        return Result.success(UserVO.from(user, null));
+    }
+
+    @GetMapping("/me")
+    @Operation(summary = "Get current user", description = "Get current user info")
+    public Result<UserVO> getCurrentUser() {
+        Long userId = getCurrentUserId();
+        User target = userService.getUserById(userId);
+        return Result.success(UserVO.from(target, null));
+    }
+
+    @PutMapping("/me/password")
+    @Operation(summary = "Update current password", description = "Update current user password")
+    public Result<UserVO> updateCurrentPassword(@RequestBody UserPasswordUpdateDTO dto) {
+        Long userId = getCurrentUserId();
+        User updated = userService.updatePassword(userId, dto);
+        return Result.success(UserVO.from(updated, null));
+    }
+
+    @PutMapping("/me/nickname")
+    @Operation(summary = "Update current nickname", description = "Update current user nickname")
+    public Result<UserVO> updateCurrentNickname(@RequestBody UserNicknameUpdateDTO dto) {
+        Long userId = getCurrentUserId();
+        User updated = userService.updateNickname(userId, dto);
+        return Result.success(UserVO.from(updated, null));
+    }
+
+    @DeleteMapping("/me")
+    @Operation(summary = "Delete current user", description = "Deactivate current user")
+    public Result<Boolean> deleteCurrentUser() {
+        Long userId = getCurrentUserId();
+        boolean success = userService.deleteUser(userId);
+        return Result.success(success);
     }
 
     @GetMapping("/{userId}")

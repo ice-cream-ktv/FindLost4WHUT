@@ -20,6 +20,12 @@ public class UserVO {
     private LocalDateTime updatedAt;
     /** 登录后返回的 Token（可空） */
     private String token;
+    /** Token 过期时间（毫秒） */
+    private Long expiresIn;
+    /** Refresh Token???? */
+    private String refreshToken;
+    /** Refresh Token ???????? */
+    private Long refreshExpiresIn;
 
     /**
      * @author DXR
