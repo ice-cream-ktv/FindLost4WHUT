@@ -1,5 +1,9 @@
 package com.whut.lostandfoundforwhut.service.impl;
 
+import com.alibaba.dashscope.embeddings.TextEmbedding;
+import com.alibaba.dashscope.embeddings.TextEmbeddingParam;
+import com.alibaba.dashscope.embeddings.TextEmbeddingResult;
+import com.alibaba.dashscope.embeddings.TextEmbeddingResultItem;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.whut.lostandfoundforwhut.common.enums.ResponseCode;
@@ -21,6 +25,11 @@ import com.whut.lostandfoundforwhut.common.utils.page.PageUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Value;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -194,6 +203,57 @@ public class ItemServiceImpl extends ServiceImpl<ItemMapper, Item> implements II
         int rows = itemMapper.deleteById(itemId);
 
         return rows > 0;
+    }
+
+    @Value("${ai.ali.api-key:#{null}}")
+    private String apiKey;
+
+    @Override
+    public String text2vec(String text) {
+        try {
+            // 检查API密钥是否配置
+            if (apiKey == null || apiKey.trim().isEmpty()) {
+                System.out.println("警告：AI API密钥未配置，无法进行文本向量化");
+                throw new AppException(
+                        ResponseCode.UN_ERROR.getCode(),
+                        "AI API密钥未配置，请在配置文件中设置ai.ali.api-key");
+            }
+
+            // 使用API密钥构建参数
+            TextEmbeddingParam param = TextEmbeddingParam
+                    .builder()
+                    .apiKey(apiKey)
+                    .model("text-embedding-v1") // 使用文本嵌入模型
+                    .texts(Arrays.asList(text))
+                    .build();
+
+            // 创建嵌入服务实例
+            TextEmbedding textEmbedding = new TextEmbedding();
+
+            // 调用API获取结果
+            TextEmbeddingResult result = textEmbedding.call(param);
+
+            // 提取向量并转换为字符串
+            List<TextEmbeddingResultItem> items = result.getOutput().getEmbeddings();
+            if (items != null && !items.isEmpty()) {
+                List<Double> vector = items.get(0).getEmbedding();
+                // 将Double转换为Float
+                List<Float> floatVector = vector.stream()
+                        .map(Double::floatValue)
+                        .collect(Collectors.toList());
+                return floatVector.toString();
+            } else {
+                throw new AppException(
+                        ResponseCode.UN_ERROR.getCode(),
+                        "向量结果为空");
+            }
+        } catch (Exception e) {
+            System.out.println("文本向量化时发生异常：" + e.getMessage());
+            e.printStackTrace();
+            throw new com.whut.lostandfoundforwhut.common.exception.AppException(
+                    com.whut.lostandfoundforwhut.common.enums.ResponseCode.UN_ERROR.getCode(),
+                    "文本向量化失败: " + e.getMessage());
+        }
     }
 
 }

@@ -112,6 +112,12 @@ public class ItemController {
         }
     }
 
+    @PostMapping("/text")
+    @Operation(summary = "文本向量生成测试")
+    public Result<String> text2vec(@RequestBody String text) {
+        return Result.success(itemService.text2vec(text));
+    }
+
     private Long resolveUserIdFromToken(String authorization) {
         if (!StringUtils.hasText(authorization) || !authorization.startsWith("Bearer ")) {
             throw new AppException(ResponseCode.NOT_LOGIN.getCode(), ResponseCode.NOT_LOGIN.getInfo());

@@ -54,4 +54,12 @@ public interface IItemService {
      * @return 是否下架成功
      */
     boolean takeDownItem(Long itemId, Long userId);
+
+    /**
+     * 文本向量化
+     *
+     * @param text 输入文本
+     * @return 向量字符串
+     */
+    String text2vec(String text);
 }
