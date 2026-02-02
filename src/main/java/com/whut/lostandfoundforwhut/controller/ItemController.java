@@ -2,7 +2,7 @@ package com.whut.lostandfoundforwhut.controller;
 
 import com.whut.lostandfoundforwhut.common.result.Result;
 import com.whut.lostandfoundforwhut.model.dto.ItemDTO;
-import com.whut.lostandfoundforwhut.model.dto.PageQueryDTO;
+import com.whut.lostandfoundforwhut.model.dto.ItemFilter;
 import com.whut.lostandfoundforwhut.model.entity.Item;
 import com.whut.lostandfoundforwhut.model.vo.PageResultVO;
 import com.whut.lostandfoundforwhut.service.IItemService;
@@ -35,59 +35,74 @@ public class ItemController {
     @PostMapping("/add-item")
     @Operation(summary = "添加物品", description = "添加新的挂失或招领物品")
     public Result<Item> addItem(
-            @Parameter(description = "Bearer token", required = false)
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @Parameter(description = "Bearer token", required = true) @RequestHeader(value = "Authorization") String authorization,
             @RequestBody ItemDTO itemDTO) {
-        Long userId = resolveUserId(authorization, itemDTO.getEmail());
-        Item item = itemService.addItem(itemDTO, userId);
-        return Result.success(item);
+        try {
+            System.out.println("接收到添加物品请求");
+            Long userId = resolveUserIdFromToken(authorization);
+            System.out.println("提取到的用户ID：" + userId);
+            Item item = itemService.addItem(itemDTO, userId);
+            System.out.println("成功创建物品，ID：" + item.getId());
+            return Result.success(item);
+        } catch (Exception e) {
+            System.out.println("添加物品时发生异常：" + e.getMessage());
+            e.printStackTrace();
+            return Result.fail(ResponseCode.UN_ERROR.getCode(), e.getMessage());
+        }
     }
 
     @PutMapping("/update-item")
     @Operation(summary = "更新物品", description = "通过查询参数更新物品信息")
     public Result<Item> updateItemByQuery(
-            @Parameter(description = "Item ID", required = true)
-            @RequestParam Long itemId,
-            @Parameter(description = "Bearer token", required = true)
-            @RequestHeader(value = "Authorization") String authorization,
+            @Parameter(description = "Item ID", required = true) @RequestParam Long itemId,
+            @Parameter(description = "Bearer token", required = true) @RequestHeader(value = "Authorization") String authorization,
             @RequestBody ItemDTO itemDTO) {
-        Long userId = resolveUserId(authorization, itemDTO.getEmail());
-        Item updatedItem = itemService.updateItem(itemId, itemDTO, userId);
-        return Result.success(updatedItem);
+        try {
+            Long userId = resolveUserIdFromToken(authorization);
+            Item updatedItem = itemService.updateItem(itemId, itemDTO, userId);
+            return Result.success(updatedItem);
+        } catch (Exception e) {
+            System.out.println("更新物品时发生异常：" + e.getMessage());
+            e.printStackTrace();
+            return Result.fail(ResponseCode.UN_ERROR.getCode(), e.getMessage());
+        }
     }
 
     @PutMapping("/take-down")
     @Operation(summary = "下架物品", description = "通过查询参数下架物品")
     public Result<Boolean> takeDownItemByQuery(
-            @Parameter(description = "Item ID", required = true)
-            @RequestParam Long itemId,
-            @Parameter(description = "Bearer token", required = true)
-            @RequestHeader(value = "Authorization") String authorization) {
-        Long userId = resolveUserId(authorization, null);
-        boolean success = itemService.takeDownItem(itemId, userId);
-        return Result.success(success);
+            @Parameter(description = "Item ID", required = true) @RequestParam Long itemId,
+            @Parameter(description = "Bearer token", required = true) @RequestHeader(value = "Authorization") String authorization) {
+        try {
+            Long userId = resolveUserIdFromToken(authorization);
+            boolean success = itemService.takeDownItem(itemId, userId);
+            return Result.success(success);
+        } catch (Exception e) {
+            System.out.println("下架物品时发生异常：" + e.getMessage());
+            e.printStackTrace();
+            return Result.fail(ResponseCode.UN_ERROR.getCode(), e.getMessage());
+        }
     }
 
-    @GetMapping("/filter")
-    @Operation(summary = "筛选物品", description = "按类型、状态或关键字筛选物品")
-    public Result<PageResultVO<Item>> filterItems(
-            PageQueryDTO pageQueryDTO,
-            @RequestParam(required = false) Integer type,
-            @RequestParam(required = false) Integer status,
-            @RequestParam(required = false) String keyword) {
-        PageResultVO<Item> result = itemService.filterItems(pageQueryDTO, type, status, keyword);
-        return Result.success(result);
+    @PostMapping("/filter")
+    @Operation(summary = "筛选物品", description = "按类型、状态、标签或时间段筛选物品")
+    public Result<PageResultVO<Item>> filterItems(@RequestBody ItemFilter ItemFilterDTO) {
+        try {
+            PageResultVO<Item> result = itemService.filterItems(ItemFilterDTO);
+            return Result.success(result);
+        } catch (Exception e) {
+            System.out.println("筛选物品时发生异常：" + e.getMessage());
+            e.printStackTrace();
+            return Result.fail(ResponseCode.UN_ERROR.getCode(), e.getMessage());
+        }
     }
 
-    private Long resolveUserId(String authorization, String emailFallback) {
-        String email = null;
-        if (StringUtils.hasText(authorization) && authorization.startsWith("Bearer ")) {
-            String token = authorization.substring(7);
-            email = jwtUtil.getEmail(token);
+    private Long resolveUserIdFromToken(String authorization) {
+        if (!StringUtils.hasText(authorization) || !authorization.startsWith("Bearer ")) {
+            throw new AppException(ResponseCode.NOT_LOGIN.getCode(), ResponseCode.NOT_LOGIN.getInfo());
         }
-        if (!StringUtils.hasText(email)) {
-            email = emailFallback;
-        }
+        String token = authorization.substring(7);
+        String email = jwtUtil.getEmail(token);
         if (!StringUtils.hasText(email)) {
             throw new AppException(ResponseCode.NOT_LOGIN.getCode(), ResponseCode.NOT_LOGIN.getInfo());
         }
