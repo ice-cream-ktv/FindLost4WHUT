@@ -6,16 +6,24 @@ import com.whut.lostandfoundforwhut.common.enums.ResponseCode;
 import com.whut.lostandfoundforwhut.common.enums.item.ItemStatus;
 import com.whut.lostandfoundforwhut.common.exception.AppException;
 import com.whut.lostandfoundforwhut.mapper.ItemMapper;
+import com.whut.lostandfoundforwhut.mapper.ItemTagMapper;
+import com.whut.lostandfoundforwhut.mapper.TagMapper;
 import com.whut.lostandfoundforwhut.mapper.UserMapper;
 import com.whut.lostandfoundforwhut.model.dto.ItemDTO;
-import com.whut.lostandfoundforwhut.model.dto.PageQueryDTO;
+import com.whut.lostandfoundforwhut.model.dto.ItemFilter;
 import com.whut.lostandfoundforwhut.model.entity.Item;
+import com.whut.lostandfoundforwhut.model.entity.ItemTag;
+import com.whut.lostandfoundforwhut.model.entity.Tag;
 import com.whut.lostandfoundforwhut.model.entity.User;
 import com.whut.lostandfoundforwhut.model.vo.PageResultVO;
 import com.whut.lostandfoundforwhut.service.IItemService;
 import com.whut.lostandfoundforwhut.common.utils.page.PageUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * @author Qoder
@@ -28,9 +36,13 @@ public class ItemServiceImpl extends ServiceImpl<ItemMapper, Item> implements II
 
     private final ItemMapper itemMapper;
     private final UserMapper userMapper;
+    private final TagMapper tagMapper;
+    private final ItemTagMapper itemTagMapper;
 
     @Override
+    @Transactional
     public Item addItem(ItemDTO itemDTO, Long userId) {
+        System.out.println("开始添加物品，用户ID：" + userId);
         // 验证用户是否存在
         User user = userMapper.selectById(userId);
         if (user == null) {
@@ -45,18 +57,18 @@ public class ItemServiceImpl extends ServiceImpl<ItemMapper, Item> implements II
         // 设置默认状态为有效
         item.setStatus(ItemStatus.ACTIVE.getCode());
         item.setDescription(itemDTO.getDescription());
-        // 生成物品编码
-        item.setItemCode(generateItemCode());
 
         // 保存到数据库
-        itemMapper.insert(item);
+        int rowsAffected = itemMapper.insert(item);
+        System.out.println("数据库影响行数：" + rowsAffected);
+        System.out.println("物品创建成功：" + item);
 
         return item;
     }
 
     @Override
     public Item updateItem(Long itemId, ItemDTO itemDTO, Long userId) {
-        // 先查询物品是否存在且属于当前用户
+        // 查询物品是否存在
         Item existingItem = itemMapper.selectById(itemId);
         if (existingItem == null) {
             throw new AppException(ResponseCode.ITEM_NOT_FOUND.getCode(), ResponseCode.ITEM_NOT_FOUND.getInfo());
@@ -65,7 +77,8 @@ public class ItemServiceImpl extends ServiceImpl<ItemMapper, Item> implements II
             throw new AppException(ResponseCode.NO_PERMISSION.getCode(), ResponseCode.NO_PERMISSION.getInfo());
         }
         if (ItemStatus.CLOSED.getCode().equals(existingItem.getStatus())) {
-            throw new AppException(ResponseCode.ITEM_STATUS_INVALID.getCode(), ResponseCode.ITEM_STATUS_INVALID.getInfo());
+            throw new AppException(ResponseCode.ITEM_STATUS_INVALID.getCode(),
+                    ResponseCode.ITEM_STATUS_INVALID.getInfo());
         }
 
         // 更新物品信息
@@ -97,26 +110,59 @@ public class ItemServiceImpl extends ServiceImpl<ItemMapper, Item> implements II
     }
 
     @Override
-    public PageResultVO<Item> filterItems(PageQueryDTO pageQueryDTO, Integer type, Integer status, String keyword) {
+    public PageResultVO<Item> filterItems(ItemFilter ItemFilterDTO) {
         // 创建MyBatis-Plus分页对象
         com.baomidou.mybatisplus.extension.plugins.pagination.Page<Item> page = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(
-                pageQueryDTO.getPageNo(), pageQueryDTO.getPageSize());
+                ItemFilterDTO.getPageNo(), ItemFilterDTO.getPageSize());
 
         LambdaQueryWrapper<Item> queryWrapper = new LambdaQueryWrapper<>();
 
         // 类型筛选
-        if (type != null) {
-            queryWrapper.eq(Item::getType, type);
+        if (ItemFilterDTO.getType() != null) {
+            queryWrapper.eq(Item::getType, ItemFilterDTO.getType());
         }
 
         // 状态筛选
-        if (status != null) {
-            queryWrapper.eq(Item::getStatus, status);
+        if (ItemFilterDTO.getStatus() != null) {
+            queryWrapper.eq(Item::getStatus, ItemFilterDTO.getStatus());
         }
 
-        // 关键词搜索（描述字段）
-        if (keyword != null && !keyword.trim().isEmpty()) {
-            queryWrapper.like(Item::getDescription, keyword);
+        // 时间段筛选
+        if (ItemFilterDTO.getStartTime() != null) {
+            queryWrapper.ge(Item::getCreatedAt, ItemFilterDTO.getStartTime());
+        }
+        if (ItemFilterDTO.getEndTime() != null) {
+            queryWrapper.le(Item::getCreatedAt, ItemFilterDTO.getEndTime());
+        }
+
+        // 标签筛选
+        if (ItemFilterDTO.getTags() != null && !ItemFilterDTO.getTags().isEmpty()) {
+            // 先查找匹配的标签ID
+            List<Tag> tags = tagMapper.selectList(
+                    new LambdaQueryWrapper<Tag>().in(Tag::getName, ItemFilterDTO.getTags()));
+
+            if (!tags.isEmpty()) {
+                List<Long> tagIds = tags.stream()
+                        .map(Tag::getId)
+                        .collect(Collectors.toList());
+
+                // 然后查找这些标签对应的物品ID
+                List<Long> itemIds = itemTagMapper.selectList(
+                        new LambdaQueryWrapper<ItemTag>().in(ItemTag::getTagId, tagIds)).stream()
+                        .map(ItemTag::getItemId)
+                        .distinct()
+                        .collect(Collectors.toList());
+
+                if (!itemIds.isEmpty()) {
+                    queryWrapper.in(Item::getId, itemIds);
+                } else {
+                    // 如果没有找到匹配标签的物品，则返回空结果
+                    queryWrapper.eq(Item::getId, -1L); // 一个不可能存在的ID
+                }
+            } else {
+                // 如果没有找到匹配的标签，则返回空结果
+                queryWrapper.eq(Item::getId, -1L); // 一个不可能存在的ID
+            }
         }
 
         // 按创建时间倒序排列
@@ -139,23 +185,15 @@ public class ItemServiceImpl extends ServiceImpl<ItemMapper, Item> implements II
         if (!existingItem.getUserId().equals(userId)) {
             throw new AppException(ResponseCode.NO_PERMISSION.getCode(), ResponseCode.NO_PERMISSION.getInfo());
         }
+        if (ItemStatus.CLOSED.getCode().equals(existingItem.getStatus())) {
+            throw new AppException(ResponseCode.ITEM_STATUS_INVALID.getCode(),
+                    ResponseCode.ITEM_STATUS_INVALID.getInfo());
+        }
 
-        // 将物品状态设置为CLOSED（1）
-        existingItem.setStatus(ItemStatus.CLOSED.getCode());
+        // 逻辑删除物品
+        int rows = itemMapper.deleteById(itemId);
 
-        // 更新数据库
-        int result = itemMapper.updateById(existingItem);
-        return result > 0;
+        return rows > 0;
     }
 
-    /**
-     * 生成物品编码
-     */
-    private Long generateItemCode() {
-        // 使用当前时间戳和随机数组合生成唯一编码
-        long timestamp = System.currentTimeMillis();
-        int randomNum = (int) (Math.random() * 1000);
-        // 组合成一个唯一的Long类型编码
-        return timestamp * 1000 + randomNum;
-    }
 }

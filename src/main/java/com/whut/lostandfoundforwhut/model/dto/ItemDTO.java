@@ -20,5 +20,4 @@ public class ItemDTO {
     private String eventPlace;
     private Integer status; // 0-有效，1-结束
     private String description;
-    private String email; // 用于添加时的邮箱验证
 }
