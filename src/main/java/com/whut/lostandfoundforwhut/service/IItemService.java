@@ -1,9 +1,11 @@
 package com.whut.lostandfoundforwhut.service;
 
 import com.whut.lostandfoundforwhut.model.dto.ItemDTO;
+import com.whut.lostandfoundforwhut.model.dto.ItemFilter;
 import com.whut.lostandfoundforwhut.model.entity.Item;
 import com.whut.lostandfoundforwhut.model.vo.PageResultVO;
-import com.whut.lostandfoundforwhut.model.dto.PageQueryDTO;
+
+import java.util.List;
 
 /**
  * @author Qoder
@@ -41,13 +43,10 @@ public interface IItemService {
     /**
      * 筛选物品
      *
-     * @param pageQueryDTO 分页查询参数
-     * @param type         物品类型（可选）
-     * @param status       物品状态（可选）
-     * @param keyword      关键词搜索（可选）
+     * @param ItemFilterDTO 筛选参数（包含分页和筛选条件）
      * @return 分页结果
      */
-    PageResultVO<Item> filterItems(PageQueryDTO pageQueryDTO, Integer type, Integer status, String keyword);
+    PageResultVO<Item> filterItems(ItemFilter ItemFilterDTO);
 
     /**
      * 下架物品
@@ -57,4 +56,14 @@ public interface IItemService {
      * @return 是否下架成功
      */
     boolean takeDownItem(Long itemId, Long userId);
+
+    /**
+     * 通过向量搜索查找相似物品
+     * 
+     * @param query        查询文本
+     * @param maxResults   最大返回结果数
+     * @param statusFilter 状态筛选条件
+     * @return 相似物品列表
+     */
+    List<Item> searchSimilarItems(String query, int maxResults, Integer statusFilter);
 }
