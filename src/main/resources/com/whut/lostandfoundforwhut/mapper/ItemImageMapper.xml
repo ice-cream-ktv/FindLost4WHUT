@@ -7,4 +7,18 @@
         <result column="item_id" property="itemId"/>
         <result column="image_id" property="imageId"/>
     </resultMap>
+    
+    <!-- 根据物品ID获取图片列表（包含URL） -->
+    <select id="getImagesByItemId" resultType="com.whut.lostandfoundforwhut.model.entity.Image">
+        SELECT i.id, i.url FROM images i
+        JOIN item_images ii ON i.id = ii.image_id
+        WHERE ii.item_id = #{itemId}
+    </select>
+    
+    <!-- 根据物品ID获取图片URL列表 -->
+    <select id="getImageUrlsByItemId" resultType="java.lang.String">
+        SELECT i.url FROM images i
+        JOIN item_images ii ON i.id = ii.image_id
+        WHERE ii.item_id = #{itemId}
+    </select>
 </mapper>

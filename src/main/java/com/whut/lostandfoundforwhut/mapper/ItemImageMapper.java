@@ -1,7 +1,10 @@
 package com.whut.lostandfoundforwhut.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.whut.lostandfoundforwhut.model.entity.Image;
 import com.whut.lostandfoundforwhut.model.entity.ItemImage;
+
+import java.util.List;
 
 /**
  * @author DXR
@@ -9,4 +12,18 @@ import com.whut.lostandfoundforwhut.model.entity.ItemImage;
  * @description 物品-图片关联 Mapper 接口
  */
 public interface ItemImageMapper extends BaseMapper<ItemImage> {
+    
+/**
+     * 根据物品ID获取图片列表
+     * @param itemId 物品ID
+     * @return 图片列表
+     */
+    List<Image> getImagesByItemId(Long itemId);
+    
+    /**
+     * 根据物品ID获取图片URL列表
+     * @param itemId 物品ID
+     * @return 图片URL列表
+     */
+    List<String> getImageUrlsByItemId(Long itemId);
 }
