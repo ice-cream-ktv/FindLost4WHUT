@@ -20,7 +20,7 @@ public String reviewText(String text)
 - `text`：需要审核的文本内容
 
 **返回值说明**：
-- `""`（空字符串）：审核通过，文本内容合法
+- `null`：审核通过，文本内容合法
 - `"包含{label}内容"`：包含违规内容, {label} 为违规内容类型
 - `"疑似{label}内容"`：疑似包含违规内容, {label} 为违规内容类型
 - `"审核失败: {message}"`：审核过程中出现异常，{message} 为异常信息

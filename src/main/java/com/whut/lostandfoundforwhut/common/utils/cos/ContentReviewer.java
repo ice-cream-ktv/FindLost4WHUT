@@ -31,7 +31,7 @@ public class ContentReviewer {
      */
     public String reviewText(String text) {
         if (text == null || text.isEmpty()) {
-            return "";
+            return null;
         }
 
         // 构建文本审核请求
@@ -169,13 +169,13 @@ public class ContentReviewer {
     private String getMessage(String result, String label) {
         StringBuilder messageBuilder = new StringBuilder();
         switch (result) {
-            case "0" -> { return ""; }
+            case "0" -> { return null; }
             case "1" -> { messageBuilder.append("包含"); }
             case "2" -> { messageBuilder.append("疑似"); }
         }
         
         switch (label) {
-            case "Normal" -> { return ""; }
+            case "Normal" -> { return null; }
             case "Porn" -> { messageBuilder.append("色情"); }
             case "Ads" -> { messageBuilder.append("广告"); }
             case "Illegal" -> { messageBuilder.append("违法"); }

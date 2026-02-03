@@ -7,6 +7,7 @@ import com.qcloud.cos.auth.COSCredentials;
 import com.qcloud.cos.model.PutObjectRequest;
 import com.qcloud.cos.model.PutObjectResult;
 import com.qcloud.cos.model.GetObjectRequest;
+import com.qcloud.cos.model.ObjectMetadata;
 import com.qcloud.cos.region.Region;
 
 import jakarta.annotation.PostConstruct;
@@ -75,6 +76,20 @@ public class COS {
      */
     public void deleteObject(String key) {
         cosClient.deleteObject(bucketName, key);
+    }
+
+    /**
+     * 检查 ObjectKey 是否存在
+     * @param key COS 存储路径
+     * @return 如果存在返回 true，否则返回 false
+     */
+    public boolean hasObject(String key) {
+        try {
+            ObjectMetadata metadata = cosClient.getObjectMetadata(bucketName, key);
+            return metadata != null;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     public String getBucketName() { return bucketName; }
