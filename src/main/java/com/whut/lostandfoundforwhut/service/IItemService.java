@@ -65,4 +65,12 @@ public interface IItemService {
      */
     List<Item> filterItemsByStatus(List<Long> itemIds, String status);
 
+    /**
+     * 搜索相似物品
+     *
+     * @param query      查询文本
+     * @param maxResults 最大返回结果数
+     * @return 相似的物品列表
+     */
+    List<Item> searchSimilarItems(String query, int maxResults);
 }

@@ -1,5 +1,7 @@
 package com.whut.lostandfoundforwhut.config;
 
+import com.whut.lostandfoundforwhut.model.dto.TextEmbeddingDTO;
+import com.whut.lostandfoundforwhut.model.entity.Item;
 import com.whut.lostandfoundforwhut.service.IVectorService;
 import com.whut.lostandfoundforwhut.service.impl.VectorServiceImpl;
 import lombok.extern.slf4j.Slf4j;
@@ -48,12 +50,12 @@ public class VectorConfig {
         }
 
         @Override
-        public void addTextToCollection(com.whut.lostandfoundforwhut.model.dto.TextEmbeddingDTO textEmbeddingDTO) {
+        public void addTextToCollection(TextEmbeddingDTO textEmbeddingDTO) {
             // 空实现 - 不做任何操作
         }
 
         @Override
-        public java.util.List<String> searchInCollection(String query, int k) {
+        public java.util.List<String> searchInCollection(String query, int maxResults) {
             // 返回空列表
             return java.util.Collections.emptyList();
         }
@@ -71,6 +73,21 @@ public class VectorConfig {
 
         @Override
         public void clearCollection() {
+            // 空实现 - 不做任何操作
+        }
+
+        @Override
+        public void addToVectorDatabase(Item item) {
+            // 空实现 - 不做任何操作
+        }
+
+        @Override
+        public void updateVectorDatabase(Item item) {
+            // 空实现 - 不做任何操作
+        }
+
+        @Override
+        public void removeFromVectorDatabase(Long itemId) {
             // 空实现 - 不做任何操作
         }
     }

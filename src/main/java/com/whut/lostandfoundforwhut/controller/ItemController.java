@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.StringUtils;
 import com.whut.lostandfoundforwhut.service.IUserService;
 import org.springframework.web.bind.annotation.*;
@@ -28,6 +29,7 @@ import java.util.List;
 @RequestMapping("/api/items")
 @RequiredArgsConstructor
 @Tag(name = "物品管理", description = "物品相关接口")
+@Slf4j
 public class ItemController {
 
     private final IItemService itemService;
@@ -126,6 +128,21 @@ public class ItemController {
             System.out.println("获取物品时发生未知异常：" + e.getMessage());
             e.printStackTrace();
             return Result.fail(ResponseCode.UN_ERROR.getCode(), "获取物品失败：" + e.getMessage());
+        }
+    }
+
+    @GetMapping("/search-similar")
+    @Operation(summary = "搜索相似物品", description = "在向量数据库中搜索与查询文本相似的物品")
+    public Result<List<Item>> searchSimilarItems(
+            @Parameter(description = "查询文本", required = true) @RequestParam String query,
+            @Parameter(description = "返回结果数量", required = false, example = "5") @RequestParam(defaultValue = "5") int maxResults) {
+        try {
+            List<Item> results = itemService.searchSimilarItems(query, maxResults);
+            log.info("搜索相似物品完成，查询：{}，返回结果数量：{}", query, results.size());
+            return Result.success(results);
+        } catch (Exception e) {
+            log.error("搜索相似物品失败，查询：{}", query, e);
+            return Result.fail(ResponseCode.UN_ERROR.getCode(), "搜索相似物品失败：" + e.getMessage());
         }
     }
 

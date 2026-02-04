@@ -18,9 +18,4 @@ public class TextEmbeddingDTO {
      * 文本内容
      */
     private String text;
-
-    /**
-     * 元数据
-     */
-    private Object metadata;
 }
