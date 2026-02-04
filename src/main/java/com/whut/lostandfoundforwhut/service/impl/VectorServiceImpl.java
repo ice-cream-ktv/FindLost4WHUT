@@ -15,12 +15,16 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
+
+import java.io.FileInputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.stream.Collectors;
 
 import com.whut.lostandfoundforwhut.model.dto.TextEmbeddingDTO;
+import com.whut.lostandfoundforwhut.model.entity.Item;
 
 /**
  * 向量数据库服务实现 - 支持ChromaDB和内存存储两种模式
@@ -150,8 +154,54 @@ public class VectorServiceImpl implements IVectorService {
     }
 
     @Override
+    public void addToVectorDatabase(Item item) {
+        try {
+            String itemDescription = item.getDescription();
+            TextEmbeddingDTO textEmbeddingDTO = TextEmbeddingDTO.builder()
+                    .id("item_" + item.getId())
+                    .text(itemDescription)
+                    .build();
+            addTextToCollection(textEmbeddingDTO);
+            log.info("物品信息已添加到向量数据库，ID：{}", item.getId());
+        } catch (Exception e) {
+            log.error("添加到向量数据库时发生异常，物品ID：{}", item.getId(), e);
+            // 这里不抛出异常，因为向量数据库的失败不应影响主业务流程
+        }
+    }
+
+    @Override
+    public void updateVectorDatabase(Item item) {
+        try {
+            String itemDescription = item.getDescription() != null ? item.getDescription() : "未提供描述";
+            // 先删除旧的向量数据
+            deleteFromCollection("item_" + item.getId());
+
+            TextEmbeddingDTO textEmbeddingDTO = TextEmbeddingDTO.builder()
+                    .id("item_" + item.getId())
+                    .text(itemDescription)
+                    .build();
+            addTextToCollection(textEmbeddingDTO);
+            log.info("向量数据库中物品信息已更新，ID：{}", item.getId());
+        } catch (Exception e) {
+            log.error("更新向量数据库时发生异常，物品ID：{}", item.getId(), e);
+            // 这里不抛出异常，因为向量数据库的失败不应影响主业务流程
+        }
+    }
+
+    @Override
+    public void removeFromVectorDatabase(Long itemId) {
+        try {
+            deleteFromCollection("item_" + itemId);
+            log.info("向量数据库中物品信息已删除，ID：{}", itemId);
+        } catch (Exception e) {
+            log.error("删除向量数据库条目时发生异常，物品ID：{}", itemId, e);
+            // 这里不抛出异常，因为向量数据库的失败不应影响主业务流程
+        }
+    }
+
+    @Override
     @SuppressWarnings("deprecation")
-    public List<String> searchInCollection(String query, int k) {
+    public List<String> searchInCollection(String query, int maxResults) {
         if (!vectorStoreEnabled) {
             log.debug("向量数据库功能已禁用，返回空搜索结果");
             return List.of();
@@ -165,7 +215,7 @@ public class VectorServiceImpl implements IVectorService {
                 return List.of();
             }
 
-            if (k <= 0) {
+            if (maxResults <= 0) {
                 log.warn("搜索结果数量必须大于0，返回空搜索结果");
                 return List.of();
             }
@@ -174,9 +224,10 @@ public class VectorServiceImpl implements IVectorService {
 
             List<EmbeddingMatch<TextSegment>> relevant;
             if (useChroma) {
-                relevant = ((ChromaEmbeddingStore) embeddingStore).findRelevant(queryEmbedding, k);
+                relevant = ((ChromaEmbeddingStore) embeddingStore).findRelevant(queryEmbedding, maxResults);
             } else {
-                relevant = ((InMemoryEmbeddingStore<TextSegment>) embeddingStore).findRelevant(queryEmbedding, k);
+                relevant = ((InMemoryEmbeddingStore<TextSegment>) embeddingStore).findRelevant(queryEmbedding,
+                        maxResults);
             }
 
             List<String> results = new ArrayList<>();
@@ -202,14 +253,14 @@ public class VectorServiceImpl implements IVectorService {
         checkInitialized();
 
         try {
-            // 使用一个简单的查询来估算集合大小
-            Embedding queryEmbedding = generateEmbedding("anything");
-
             List<EmbeddingMatch<TextSegment>> allItems;
             if (useChroma) {
-                // 尝试获取最大可能数量的项目
+                // 对于ChromaDB，使用一个通用查询来获取所有项目
+                Embedding queryEmbedding = generateEmbedding("anything");
                 allItems = ((ChromaEmbeddingStore) embeddingStore).findRelevant(queryEmbedding, 10000);
             } else {
+                // 对于内存存储，同样使用查询来获取所有项目
+                Embedding queryEmbedding = generateEmbedding("anything");
                 allItems = ((InMemoryEmbeddingStore<TextSegment>) embeddingStore).findRelevant(queryEmbedding, 10000);
             }
             int size = allItems.size();
@@ -266,11 +317,13 @@ public class VectorServiceImpl implements IVectorService {
 
         try {
             if (useChroma) {
-                // 对于ChromaDB，重新创建实例
+                // 对于ChromaDB，重新创建实例来清空数据
+                // 由于ChromaDB Java客户端没有直接的删除全部数据的方法，我们重新创建实例
                 this.embeddingStore = ChromaEmbeddingStore.builder()
                         .baseUrl(chromaUrl)
                         .collectionName(collectionName)
                         .build();
+                log.info("ChromaDB向量数据库集合已清空并重建");
             } else {
                 // 对于内存存储，创建新的实例
                 this.embeddingStore = new InMemoryEmbeddingStore<>();
@@ -365,5 +418,40 @@ public class VectorServiceImpl implements IVectorService {
         }
 
         return vector;
+    }
+
+    /**
+     * 将图片文件转换为Base64格式
+     *
+     * @param imagePath 图片文件路径
+     * @return Base64编码的图片字符串，格式为 "data:image/[format];base64,[base64_data]"
+     * @throws Exception 当文件不存在或读取失败时抛出异常
+     */
+    public String imageToBase64(String imagePath) throws Exception {
+        try {
+            byte[] imageBytes;
+            try (FileInputStream fis = new FileInputStream(imagePath)) {
+                imageBytes = fis.readAllBytes();
+            }
+
+            String imageData = Base64.getEncoder().encodeToString(imageBytes);
+
+            // 获取图片格式
+            String formatType;
+            String lowerImagePath = imagePath.toLowerCase();
+            if (lowerImagePath.endsWith(".png")) {
+                formatType = "png";
+            } else if (lowerImagePath.endsWith(".jpg") || lowerImagePath.endsWith(".jpeg")) {
+                formatType = "jpeg";
+            } else {
+                formatType = "jpeg"; // 默认格式
+            }
+
+            // 构造正确的Base64格式
+            return "data:image/" + formatType + ";base64," + imageData;
+        } catch (Exception e) {
+            log.error("图片转Base64失败，路径：{}", imagePath, e);
+            throw new Exception("错误：图片转Base64失败：" + e.getMessage());
+        }
     }
 }

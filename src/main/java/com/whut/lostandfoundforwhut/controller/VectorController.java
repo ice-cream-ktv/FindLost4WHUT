@@ -45,9 +45,9 @@ public class VectorController {
     @Operation(summary = "向量搜索", description = "在向量数据库中搜索相似文本")
     public Result<List<String>> searchInCollection(
             @Parameter(description = "查询文本", required = true) @RequestParam String query,
-            @Parameter(description = "返回结果数量", required = false, example = "5") @RequestParam(defaultValue = "5") int k) {
+            @Parameter(description = "返回结果数量", required = false, example = "5") @RequestParam(defaultValue = "5") int maxResults) {
         try {
-            List<String> results = vectorService.searchInCollection(query, k);
+            List<String> results = vectorService.searchInCollection(query, maxResults);
             log.info("向量搜索完成，查询：{}，返回结果数量：{}", query, results.size());
             return Result.success(results);
         } catch (Exception e) {

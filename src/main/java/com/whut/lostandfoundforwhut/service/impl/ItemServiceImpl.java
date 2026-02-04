@@ -5,13 +5,13 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.whut.lostandfoundforwhut.common.enums.ResponseCode;
 import com.whut.lostandfoundforwhut.common.enums.item.ItemStatus;
 import com.whut.lostandfoundforwhut.common.exception.AppException;
+import com.whut.lostandfoundforwhut.mapper.ItemImageMapper;
 import com.whut.lostandfoundforwhut.mapper.ItemMapper;
 import com.whut.lostandfoundforwhut.mapper.ItemTagMapper;
 import com.whut.lostandfoundforwhut.mapper.TagMapper;
 import com.whut.lostandfoundforwhut.mapper.UserMapper;
 import com.whut.lostandfoundforwhut.model.dto.ItemDTO;
 import com.whut.lostandfoundforwhut.model.dto.ItemFilterDTO;
-import com.whut.lostandfoundforwhut.model.dto.ItemMetadata;
 import com.whut.lostandfoundforwhut.model.entity.Item;
 import com.whut.lostandfoundforwhut.model.entity.ItemTag;
 import com.whut.lostandfoundforwhut.model.entity.Tag;
@@ -19,7 +19,6 @@ import com.whut.lostandfoundforwhut.model.entity.User;
 import com.whut.lostandfoundforwhut.model.vo.PageResultVO;
 import com.whut.lostandfoundforwhut.service.IItemService;
 import com.whut.lostandfoundforwhut.service.IVectorService;
-import com.whut.lostandfoundforwhut.model.dto.TextEmbeddingDTO;
 import com.whut.lostandfoundforwhut.common.utils.page.PageUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +26,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -45,6 +43,7 @@ public class ItemServiceImpl extends ServiceImpl<ItemMapper, Item> implements II
     private final UserMapper userMapper;
     private final TagMapper tagMapper;
     private final ItemTagMapper itemTagMapper;
+    private final ItemImageMapper itemImageMapper;
     private final IVectorService vectorService;
 
     @Override
@@ -55,6 +54,7 @@ public class ItemServiceImpl extends ServiceImpl<ItemMapper, Item> implements II
             throw new AppException(ResponseCode.USER_NOT_FOUND.getCode(), ResponseCode.USER_NOT_FOUND.getInfo());
         }
 
+        // 创建物品
         Item item = new Item();
         item.setUserId(userId);
         item.setType(itemDTO.getType());
@@ -63,12 +63,16 @@ public class ItemServiceImpl extends ServiceImpl<ItemMapper, Item> implements II
         item.setStatus(ItemStatus.ACTIVE.getCode());
         item.setDescription(itemDTO.getDescription());
 
-        // 保存到数据库
+        // 物品保存到数据库
         int rowsAffected = itemMapper.insert(item);
         log.info("数据库影响行数：{}，物品创建成功：{}", rowsAffected, item.getId());
 
+        // 获取物品对应图片（URL列表）
+        List<String> imageUrls = itemImageMapper.getImageUrlsByItemId(item.getId());
+
         // 将物品描述添加到向量数据库
-        addToVectorDatabase(item);
+        // addToVectorDatabaseImage(item, imageUrls);
+        vectorService.addToVectorDatabase(item);
 
         return item;
     }
@@ -109,7 +113,7 @@ public class ItemServiceImpl extends ServiceImpl<ItemMapper, Item> implements II
         itemMapper.updateById(existingItem);
 
         // 更新向量数据库中的物品描述
-        updateVectorDatabase(existingItem);
+        vectorService.updateVectorDatabase(existingItem);
 
         return existingItem;
     }
@@ -226,79 +230,9 @@ public class ItemServiceImpl extends ServiceImpl<ItemMapper, Item> implements II
         int rows = itemMapper.updateById(existingItem);
 
         // 从向量数据库中删除物品描述
-        removeFromVectorDatabase(itemId);
+        vectorService.removeFromVectorDatabase(itemId);
 
         return rows > 0;
-    }
-
-    /**
-     * 将物品信息添加到向量数据库
-     *
-     * @param item 物品实体
-     */
-    private void addToVectorDatabase(Item item) {
-        try {
-            String itemDescription = item.getDescription();
-            // 创建包含物品状态和标签的元数据对象
-            ItemMetadata itemMetadata = ItemMetadata.builder()
-                    .status(item.getStatus())
-                    .tags(List.of()) // 暂时空标签列表，后续可扩展
-                    .build();
-            TextEmbeddingDTO textEmbeddingDTO = TextEmbeddingDTO.builder()
-                    .id("item_" + item.getId())
-                    .text(itemDescription)
-                    .metadata(itemMetadata)
-                    .build();
-            vectorService.addTextToCollection(textEmbeddingDTO);
-            log.info("物品信息已添加到向量数据库，ID：{}", item.getId());
-        } catch (Exception e) {
-            log.error("添加到向量数据库时发生异常，物品ID：{}", item.getId(), e);
-            // 这里不抛出异常，因为向量数据库的失败不应影响主业务流程
-        }
-    }
-
-    /**
-     * 更新向量数据库中的物品信息
-     *
-     * @param item 更新后的物品实体
-     */
-    private void updateVectorDatabase(Item item) {
-        try {
-            String itemDescription = item.getDescription() != null ? item.getDescription() : "未提供描述";
-            // 先删除旧的向量数据
-            vectorService.deleteFromCollection("item_" + item.getId());
-
-            // 创建包含物品状态和标签的元数据对象
-            ItemMetadata itemMetadata = ItemMetadata.builder()
-                    .status(item.getStatus())
-                    .tags(List.of()) // 暂时空标签列表，后续可扩展
-                    .build();
-            TextEmbeddingDTO textEmbeddingDTO = TextEmbeddingDTO.builder()
-                    .id("item_" + item.getId())
-                    .text(itemDescription)
-                    .metadata(itemMetadata)
-                    .build();
-            vectorService.addTextToCollection(textEmbeddingDTO);
-            log.info("向量数据库中物品信息已更新，ID：{}", item.getId());
-        } catch (Exception e) {
-            log.error("更新向量数据库时发生异常，物品ID：{}", item.getId(), e);
-            // 这里不抛出异常，因为向量数据库的失败不应影响主业务流程
-        }
-    }
-
-    /**
-     * 从向量数据库中删除物品信息
-     *
-     * @param itemId 物品ID
-     */
-    private void removeFromVectorDatabase(Long itemId) {
-        try {
-            vectorService.deleteFromCollection("item_" + itemId);
-            log.info("向量数据库中物品信息已删除，ID：{}", itemId);
-        } catch (Exception e) {
-            log.error("删除向量数据库条目时发生异常，物品ID：{}", itemId, e);
-            // 这里不抛出异常，因为向量数据库的失败不应影响主业务流程
-        }
     }
 
     @Override
@@ -319,5 +253,37 @@ public class ItemServiceImpl extends ServiceImpl<ItemMapper, Item> implements II
                 itemIds.size(), filteredItems.size(), status);
 
         return filteredItems;
+    }
+
+    @Override
+    public List<Item> searchSimilarItems(String query, int maxResults) {
+        try {
+            // 使用向量数据库搜索相似的物品ID
+            List<String> similarItemIds = vectorService.searchInCollection(query, maxResults);
+
+            // 将向量数据库返回的ID转换为Long类型的物品ID
+            List<Long> itemIds = similarItemIds.stream()
+                    .filter(id -> id.startsWith("item_")) // 确保是物品ID格式
+                    .map(id -> Long.parseLong(id.substring(5))) // 移除 "item_" 前缀并转换为Long
+                    .collect(Collectors.toList());
+
+            if (itemIds.isEmpty()) {
+                return new ArrayList<>();
+            }
+
+            // 根据ID列表查询物品信息
+            LambdaQueryWrapper<Item> queryWrapper = new LambdaQueryWrapper<>();
+            queryWrapper.in(Item::getId, itemIds)
+                    .orderByDesc(Item::getCreatedAt); // 按创建时间倒序排列
+
+            List<Item> items = itemMapper.selectList(queryWrapper);
+
+            log.info("搜索相似物品完成，查询：{}，返回结果数量：{}", query, items.size());
+
+            return items;
+        } catch (Exception e) {
+            log.error("搜索相似物品失败，查询：{}", query, e);
+            throw new AppException(ResponseCode.UN_ERROR.getCode(), "搜索相似物品失败：" + e.getMessage());
+        }
     }
 }
