@@ -33,6 +33,13 @@ public interface IImageService {
     List<Image> uploadAndAddItemImages(Long itemId, List<MultipartFile> files);
 
     /**
+     * 从图片中提取标签
+     * @param file 图片文件
+     * @return 标签列表
+     */
+    List<String> getTabs(MultipartFile file);
+
+    /**
      * 根据 ID 查询图片
      * @param id 图片ID
      * @return 图片响应DTO

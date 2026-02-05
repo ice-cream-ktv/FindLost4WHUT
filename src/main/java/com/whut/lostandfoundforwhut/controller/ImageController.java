@@ -19,32 +19,6 @@ public class ImageController {
     @Autowired
     private IImageService imageService;
 
-    /*
-    @PostMapping("/upload")
-    public Result<Image> upload(@RequestParam("file") MultipartFile file) {
-        try {
-            Image image = imageService.uploadImage(file);
-            return Result.success(image);
-        } catch (AppException e) {
-            return Result.fail(e.getCode(), e.getMessage());
-        } catch (Exception e) {
-            return Result.fail(ResponseCode.UN_ERROR.getCode(), e.getMessage());
-        }
-    }
-
-    @PostMapping("/upload/multiple")
-    public Result<List<Image>> uploadMultiple(@RequestParam("files") List<MultipartFile> files) {
-        try {
-            List<Image> responses = imageService.uploadImages(files);
-            return Result.success(responses);
-        } catch (AppException e) {
-            return Result.fail(e.getCode(), e.getMessage());
-        } catch (Exception e) {
-            return Result.fail(ResponseCode.UN_ERROR.getCode(), e.getMessage());
-        }
-    }
-    */
-
     /**
      * @description 上传多张图片并关联到物品，上传失败时会回滚物品的创建
      * @param itemId 物品ID
@@ -62,6 +36,16 @@ public class ImageController {
         } catch (Exception e) {
             String code = e instanceof AppException ? ((AppException) e).getCode() : ResponseCode.UN_ERROR.getCode();
             return Result.fail(code, e.getMessage());
+        }
+    }
+
+    @PostMapping("/recognize/tabs")
+    public Result<List<String>> getTabs(@RequestParam("file") MultipartFile file) {
+        try {
+            List<String> tabs = imageService.getTabs(file);
+            return Result.success(tabs);
+        } catch (Exception e) {
+            return Result.fail(ResponseCode.UN_ERROR.getCode(), e.getMessage());
         }
     }
 

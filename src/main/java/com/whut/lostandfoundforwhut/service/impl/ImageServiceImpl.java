@@ -3,6 +3,7 @@ package com.whut.lostandfoundforwhut.service.impl;
 import com.whut.lostandfoundforwhut.common.enums.ResponseCode;
 import com.whut.lostandfoundforwhut.common.exception.AppException;
 import com.whut.lostandfoundforwhut.common.utils.cos.COS;
+import com.whut.lostandfoundforwhut.common.utils.cos.ContentRecognizer;
 import com.whut.lostandfoundforwhut.common.utils.cos.ContentReviewer;
 import com.whut.lostandfoundforwhut.common.utils.image.ImageValidator;
 import com.whut.lostandfoundforwhut.mapper.ImageMapper;
@@ -23,6 +24,7 @@ import org.springframework.util.unit.DataSize;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -46,6 +48,10 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image> implements
     // 自动注入内容审核器
     @Autowired
     private ContentReviewer contentReviewer;
+    // 自动注入内容识别器
+    @Autowired
+    private ContentRecognizer contentRecognizer;
+
     @Autowired
     private ItemImageMapper itemImageMapper;
     @Autowired
@@ -53,61 +59,13 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image> implements
     @Autowired
     private ImageMapper imageMapper;
 
+    // 最小置信度
+    private int CONTENT_RECOGNITION_MIN_CONFIDENCE = 60;
+
     @PostConstruct
     public void init() {
         this.maxFileSizeBytes = DataSize.parse(maxFileSize).toBytes();
     }
-
-    /**
-     * @description 上传图片到COS
-     * @param file 图片文件
-     * @return 图片实体
-     */
-    /*
-    @Override
-    public Image uploadImage(MultipartFile file) {
-        // 验证文件
-        validateImageFile(file);
-        // 创建上传目录
-        File uploadDirFile = createDir(uploadDir);
-        // 获取文件扩展名
-        String originalFilename = file.getOriginalFilename();
-        String extension = originalFilename.substring(originalFilename.lastIndexOf("."));
-        // 生成唯一文件名
-        String uniqueFilename = java.util.UUID.randomUUID().toString() + extension;
-
-        try {
-            // 先保存到临时文件
-            File tempFile = File.createTempFile("temp", extension);
-            file.transferTo(tempFile.toPath());
-            // 上传到COS
-            cos.uploadFile(tempFile, uniqueFilename);
-            tempFile.delete();
-            // 审核图片
-            String message = contentReviewer.reviewImageKey(uniqueFilename);
-            if (message != null) {
-                throw new AppException(ResponseCode.ILLEGAL_PARAMETER.getCode(), message);
-            }
-            // 下载并保存图片
-            File filePath = new File(uploadDirFile, uniqueFilename);
-            cos.downloadFile(uniqueFilename, filePath);
-            // 保存数据库信息
-            Image image = new Image();
-            image.setUrl(uniqueFilename);
-            imageMapper.insert(image);
-            return image;
-        } catch (AppException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new AppException(ResponseCode.UN_ERROR.getCode(), "文件上传失败: " + e.getMessage());
-        } finally {
-            // 确保COS上的文件被删除
-            if (cos.hasObject(uniqueFilename)) {
-                cos.deleteObject(uniqueFilename);
-            }
-        }
-    }
-    */
 
     /**
      * 上传并添加物品图片
@@ -115,6 +73,7 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image> implements
      * @param files 图片文件列表
      * @return 图片实体列表
      */
+    @Override
     public List<Image> uploadAndAddItemImages(Long itemId, List<MultipartFile> files) {
         try {
             // 上传图片
@@ -145,11 +104,56 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image> implements
     }
 
     /**
-     * @description 上传并添加物品图片
+     * @description 从图片中提取标签
+     * @param file 图片文件
+     * @return 标签列表
+     */
+    @Override
+    public List<String> getTabs(MultipartFile file) {
+        String uniqueFilename = null;
+
+        // 验证文件
+        validateImageFile(file);
+        try {
+            // 上传文件到COS并获取唯一文件名
+            uniqueFilename = uploadFileToCOSReturnUniqueFilename(file);
+            // 审核图片
+            String message = contentReviewer.reviewImageKey(uniqueFilename);
+            if (message != null) {
+                throw new AppException(ResponseCode.ILLEGAL_PARAMETER.getCode(), message);
+            }
+            // 从COS上的图片提取标签
+            List<String> tabs = contentRecognizer.getCategoriesAndNames(uniqueFilename, CONTENT_RECOGNITION_MIN_CONFIDENCE);
+            
+            return tabs;
+        } catch (AppException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new AppException(ResponseCode.UN_ERROR.getCode(), "提取标签失败: " + e.getMessage());
+        } finally {
+            // 确保COS上的文件被删除
+            if (uniqueFilename != null && cos.hasObject(uniqueFilename)) {
+                cos.deleteObject(uniqueFilename);
+            }
+        }
+    }
+
+    /**
+     * @description 根据ID获取图片
+     * @param id 图片ID
+     * @return 图片实体
+     */
+    @Override
+    public Image getImageById(Long id) {
+        return imageMapper.selectById(id);
+    }
+
+    /**
+     * @description 上传图片
      * @param files 图片文件列表
      * @return 图片实体列表
      */
-    public List<Image> uploadImages(List<MultipartFile> files) {
+    private List<Image> uploadImages(List<MultipartFile> files) {
         for (MultipartFile file : files) {
             if (file == null || file.isEmpty()) { continue; }
             validateImageFile(file);
@@ -157,24 +161,11 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image> implements
 
         List<String> uniqueFilenames = new ArrayList<>(); // 存储唯一文件名
         try {
-            // 创建上传目录
-            File uploadDirFile = createDir(uploadDir);
             // 上传所有文件
             for (MultipartFile file : files) {
                 if (file == null || file.isEmpty()) { continue; }
-                
-                // 获取文件扩展名
-                String originalFilename = file.getOriginalFilename();
-                String extension = originalFilename.substring(originalFilename.lastIndexOf("."));
-                // 生成唯一文件名
-                String uniqueFilename = java.util.UUID.randomUUID().toString() + extension;
-                
-                // 先保存到临时文件
-                File tempFile = File.createTempFile("temp", extension);
-                file.transferTo(tempFile.toPath());
-                // 上传到COS
-                cos.uploadFile(tempFile, uniqueFilename);
-                tempFile.delete();
+                // 上传文件到COS并获取唯一文件名
+                String uniqueFilename = uploadFileToCOSReturnUniqueFilename(file);
                 // 添加到唯一文件名列表
                 uniqueFilenames.add(uniqueFilename);
             }
@@ -186,6 +177,8 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image> implements
                 throw new AppException(ResponseCode.ILLEGAL_PARAMETER.getCode(), message);
             }
 
+            // 创建上传目录
+            File uploadDirFile = createDir(uploadDir);
             // 下载并保存图片
             List<Image> images = new ArrayList<>();
             for (String uniqueFilename : uniqueFilenames) {
@@ -212,13 +205,26 @@ public class ImageServiceImpl extends ServiceImpl<ImageMapper, Image> implements
     }
 
     /**
-     * @description 根据ID获取图片
-     * @param id 图片ID
-     * @return 图片实体
+     * 上传文件到COS并返回唯一文件名
+     * @param file 上传的文件
+     * @return 唯一文件名
+     * @throws IOException 如果上传过程中发生IO错误
      */
-    @Override
-    public Image getImageById(Long id) {
-        return imageMapper.selectById(id);
+    private String uploadFileToCOSReturnUniqueFilename(MultipartFile file) throws IOException {
+        // 获取文件扩展名
+        String originalFilename = file.getOriginalFilename();
+        String extension = originalFilename.substring(originalFilename.lastIndexOf("."));
+        // 生成唯一文件名
+        String uniqueFilename = java.util.UUID.randomUUID().toString() + extension;
+        
+        // 先保存到临时文件
+        File tempFile = File.createTempFile("temp", extension);
+        file.transferTo(tempFile.toPath());
+        // 上传到COS
+        cos.uploadFile(tempFile, uniqueFilename);
+        tempFile.delete();
+        // 返回唯一文件名
+        return uniqueFilename;
     }
 
     /**
